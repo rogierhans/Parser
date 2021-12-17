@@ -1,5 +1,5 @@
 ﻿open FParsec
-type Packet = Literal of int * int * int64 | Operator of (int * int *  Packet list) | Error of string
+type Packet = Literal of (int * int) * int64 | Operator of (int * int) *  Packet list | Error of string
 let Hex2Bits (a:string) =
     match a with
     |"0"  -> "0000"
@@ -47,7 +47,7 @@ let rec repeatParser p number =
     | 0 -> preturn []
     | _ -> pipe2 p (repeatParser p (number-1)) (fun a b -> (a::b))
 
-let rec countBits number = repeatParser bit number
+let rec repeatBits number = repeatParser bit number
 
 
     
@@ -61,19 +61,14 @@ let rec FromListToString list =
     
 let bitsToInt x = System.Convert.ToInt32(x,2)
 let bitsToLong x = System.Convert.ToInt64(x,2)
-let unpack listPacktes =
-    match listPacktes with
-    | Some x -> x
-    | None -> []
-
-let notLast = one >>. countBits 4
-let Last = zero >>.  countBits 4
-let version = countBits 3 |>> fun x -> bitsToInt (FromListToString x) 
-let packtetID = countBits 3 |>> fun x -> bitsToInt (FromListToString x) 
+let notLast = one >>. repeatBits 4
+let Last = zero >>.  repeatBits 4
+let version = repeatBits 3 |>> (FromListToString >> bitsToInt) 
+let packtetID = repeatBits 3 |>> (FromListToString >> bitsToInt) 
 let LiteralID = pstring "100" >>% 4
-let blockBitsParser =pipe2 (many notLast) Last (fun x y -> bitsToLong (  FromListToString (List.append ( List.concat x ) y)))
-let lengthLabel length =  countBits length |>> fun list ->bitsToInt ( FromListToString list)
-let subsrting = lengthLabel 15 >>= fun length -> countBits length |>> FromListToString
+let blockBitsParser =pipe2 (many notLast) Last (fun x y -> ( FromListToString >> bitsToLong)  (List.append ( List.concat x ) y))
+let lengthLabel length =  repeatBits length |>> (FromListToString >>bitsToInt)
+let subsrting = lengthLabel 15 >>=  repeatBits  |>> FromListToString
 
 
 let rec packetParser = literal <|>operator0 <|> operator1
@@ -81,10 +76,10 @@ and  strToPackets  str =
     match run (many packetParser) str with
     | Success(result, _, _)   ->  result
     | Failure(errorMsg, _, _) -> [Error errorMsg] 
-and literal = version  .>>.?  LiteralID .>>.?   blockBitsParser  |>> (fun ((a,b),c) -> Literal (a, b, c))
-and operator0 = (version  .>>.? packtetID .>>.? zero .>>. subsrting) |>> fun (((a,b),_),d) ->  Operator (a,b,(strToPackets d))
-and operator1 =   version  .>>.? packtetID  .>>.? one  .>>. parseMultiplePacket |>> (fun (((a,b),c),d)  -> Operator (a,b,d))
-and parseMultiplePacket = lengthLabel 11 >>= fun length ->  repeatParser (packetParser) length 
+and literal = version  .>>.?  LiteralID .>>.?   blockBitsParser  |>> Literal
+and operator0 = version  .>>.? packtetID .>>? zero .>>. subsrting |>> fun (x,d) ->  Operator (x,strToPackets d)
+and operator1 =   version  .>>.? packtetID  .>>? one  .>>. parseMultiplePacket |>> Operator
+and parseMultiplePacket = lengthLabel 11 >>=( fun length ->  repeatParser packetParser length )
 
 
 
@@ -92,8 +87,8 @@ let min a b = if a < b then a else b
 let max a b = if a < b then b else a
 let rec eval (pak:Packet) =
     match pak with
-    | Literal (_,_,x) -> x
-    | Operator (_,p,list) ->  applyOperator p list
+    | Literal ((_,_),x) -> x
+    | Operator ((_,p),list) ->  applyOperator p list
     | Error (_) -> 0L
 and applyOperator p list = 
     match p with
