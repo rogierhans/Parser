@@ -31,8 +31,8 @@ let subsrting = lengthLabel 15 >>=  repeatBits
 let rec packetParser = literal <|>operator0 <|> operator1
 and  strToPackets  str =
     match run (many packetParser) str with
-    | Success(result, _, _)   ->  result
-    | Failure(errorMsg, _, _) -> failwith ("Cannot parse lel"+ errorMsg)
+    | Success(result, x, y)   ->  result
+    | Failure(errorMsg, x, y) -> failwith ("Cannot parse lel "+ errorMsg)
 and literal = version  .>>.?  literalID .>>.?   blockBitsParser  |>> Literal
 and operator0 = version  .>>.? packtetID .>>? zero .>>. subsrting |>> fun (x,d) ->  Operator (x,strToPackets d)
 and operator1 =   version  .>>.? packtetID  .>>? one  .>>. multiplePacket |>> Operator
@@ -47,21 +47,22 @@ let rec eval (pak:Packet) =
     | Literal ((_,_),x) -> x
     | Operator ((_,p),list) ->  applyOperator p list
 and applyOperator p list = 
+    let evalList = (List.map eval list)
     match p with
-    | 0 -> List.sum (List.map eval list)
-    | 1 -> List.fold (fun a b -> a * b ) 1 (List.map eval list)
-    | 2 -> List.fold min System.Int64.MaxValue (List.map eval list)
-    | 3 -> List.fold max System.Int64.MinValue (List.map eval list)
-    | 5 -> if (List.map eval list)[0]> (List.map eval list)[1] then 1 else 0
-    | 6 -> if (List.map eval list)[0]< (List.map eval list)[1] then 1 else 0
-    | 7 ->if (List.map eval list)[0] = (List.map eval list)[1] then 1 else 0
+    | 0 -> List.sum evalList
+    | 1 -> List.fold (*) 1 evalList
+    | 2 -> List.fold min System.Int64.MaxValue  evalList
+    | 3 -> List.fold max System.Int64.MinValue evalList
+    | 5 -> if evalList[0]> evalList[1] then 1 else 0
+    | 6 -> if evalList[0]< evalList[1] then 1 else 0
+    | 7 -> if evalList[0] = evalList[1] then 1 else 0
     | _ ->  System.Int64.MaxValue
 type Floater = {Name : string; Age:float} 
 
 let strToPacket  str =
     match run packetParser str with
     | Success(result, _, _)   ->  result
-    | Failure(errorMsg, _, _) -> failwith ("Cannot parse lel"+ errorMsg)
+    | Failure(errorMsg, _, _) -> failwith ("Cannot parse lel "+ errorMsg)
 
 
 let Hex2Bits (a:string) =
