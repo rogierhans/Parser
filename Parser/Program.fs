@@ -1,31 +1,29 @@
 ﻿open FParsec
 type Packet = Literal of (int * int) * int64 | Operator of (int * int) *  Packet list 
 
-
-
-
+let bitsToInt x = System.Convert.ToInt32(x,2)
+let bitsToLong x = System.Convert.ToInt64(x,2)
+let flatten   = List.fold (+) ""
 
 let rec repeatParser p number = 
     match number with 
     | 0 -> preturn []
     | _ -> pipe2 p (repeatParser p (number-1)) (fun a b -> (a::b))
 
-let Flat  = List.fold (+) ""
-
 let one = pstring "1" >>% "1"
 let zero = pstring "0" >>% "0"
 let bit = one <|> zero
-let repeatBits number = repeatParser bit number |>> Flat
-let bitsToInt x = System.Convert.ToInt32(x,2)
-let bitsToLong x = System.Convert.ToInt64(x,2)
+let repeatBits number = repeatParser bit number |>> flatten 
+let bitsFromSubstring length =  repeatBits length |>> bitsToInt
+
+let version = bitsFromSubstring 3
+let packtetID = bitsFromSubstring 3
+let literalID = pstring "100" |>> bitsToInt
+
 let block = one >>. repeatBits 4
 let lastBlock = zero >>.  repeatBits 4
-let version = repeatBits 3 |>>  bitsToInt
-let packtetID = repeatBits 3 |>>  bitsToInt 
-let literalID = pstring "100" >>% 4
-let blockBitsParser =pipe2 (many block) lastBlock (fun x y -> ( bitsToLong) (Flat x + y) )
-let lengthLabel length =  repeatBits length |>> (bitsToInt)
-let subsrting = lengthLabel 15 >>=  repeatBits 
+let blockBitsParser =pipe2 (many block) lastBlock (fun x y -> ( bitsToLong) (flatten x + y) )
+
 
 
 let rec packetParser = literal <|>operator0 <|> operator1
@@ -34,9 +32,9 @@ and  strToPackets  str =
     | Success(result, x, y)   ->  result
     | Failure(errorMsg, x, y) -> failwith ("Cannot parse lel "+ errorMsg)
 and literal = version  .>>.?  literalID .>>.?   blockBitsParser  |>> Literal
-and operator0 = version  .>>.? packtetID .>>? zero .>>. subsrting |>> fun (x,d) ->  Operator (x,strToPackets d)
+and operator0 = version  .>>.? packtetID .>>? zero .>>. (bitsFromSubstring 15 >>=  repeatBits) |>> fun (x,d) ->  Operator (x,strToPackets d)
 and operator1 =   version  .>>.? packtetID  .>>? one  .>>. multiplePacket |>> Operator
-and multiplePacket = lengthLabel 11 >>=( fun length ->  repeatParser packetParser length )
+and multiplePacket = bitsFromSubstring 11 >>=( fun length ->  repeatParser packetParser length )
 
 
 
@@ -56,8 +54,7 @@ and applyOperator p list =
     | 5 -> if evalList[0]> evalList[1] then 1 else 0
     | 6 -> if evalList[0]< evalList[1] then 1 else 0
     | 7 -> if evalList[0] = evalList[1] then 1 else 0
-    | _ ->  System.Int64.MaxValue
-type Floater = {Name : string; Age:float} 
+    | _ -> failwith "packetId does not exists"
 
 let strToPacket  str =
     match run packetParser str with
