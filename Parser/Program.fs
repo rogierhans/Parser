@@ -47,28 +47,26 @@ let rec repeatParser p number =
     | 0 -> preturn []
     | _ -> pipe2 p (repeatParser p (number-1)) (fun a b -> (a::b))
 
-let rec repeatBits number = repeatParser bit number
-
 
     
-    
 
-let rec FromListToString list =
+let rec Flat list =
     match list with
     | [] ->""
-    | (x::xs) -> x + FromListToString xs
+    | (x::xs) -> x + Flat xs
 
-    
+
+let repeatBits number = repeatParser bit number |>> Flat
 let bitsToInt x = System.Convert.ToInt32(x,2)
 let bitsToLong x = System.Convert.ToInt64(x,2)
-let notLast = one >>. repeatBits 4
-let Last = zero >>.  repeatBits 4
-let version = repeatBits 3 |>> (FromListToString >> bitsToInt) 
-let packtetID = repeatBits 3 |>> (FromListToString >> bitsToInt) 
-let LiteralID = pstring "100" >>% 4
-let blockBitsParser =pipe2 (many notLast) Last (fun x y -> ( FromListToString >> bitsToLong)  (List.append ( List.concat x ) y))
-let lengthLabel length =  repeatBits length |>> (FromListToString >>bitsToInt)
-let subsrting = lengthLabel 15 >>=  repeatBits  |>> FromListToString
+let block = one >>. repeatBits 4
+let lastBlock = zero >>.  repeatBits 4
+let version = repeatBits 3 |>>  bitsToInt
+let packtetID = repeatBits 3 |>>  bitsToInt 
+let literalID = pstring "100" >>% 4
+let blockBitsParser =pipe2 (many block) lastBlock (fun x y -> ( bitsToLong) (Flat x + y) )
+let lengthLabel length =  repeatBits length |>> (bitsToInt)
+let subsrting = lengthLabel 15 >>=  repeatBits 
 
 
 let rec packetParser = literal <|>operator0 <|> operator1
@@ -76,10 +74,10 @@ and  strToPackets  str =
     match run (many packetParser) str with
     | Success(result, _, _)   ->  result
     | Failure(errorMsg, _, _) -> [Error errorMsg] 
-and literal = version  .>>.?  LiteralID .>>.?   blockBitsParser  |>> Literal
+and literal = version  .>>.?  literalID .>>.?   blockBitsParser  |>> Literal
 and operator0 = version  .>>.? packtetID .>>? zero .>>. subsrting |>> fun (x,d) ->  Operator (x,strToPackets d)
-and operator1 =   version  .>>.? packtetID  .>>? one  .>>. parseMultiplePacket |>> Operator
-and parseMultiplePacket = lengthLabel 11 >>=( fun length ->  repeatParser packetParser length )
+and operator1 =   version  .>>.? packtetID  .>>? one  .>>. multiplePacket |>> Operator
+and multiplePacket = lengthLabel 11 >>=( fun length ->  repeatParser packetParser length )
 
 
 
